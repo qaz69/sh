@@ -165,8 +165,8 @@ configure_tls() {
         get_arch
         info "下载证书复制工具..."
         URL="https://github.com/virusdefender/copy-cert/releases/latest/download/copy-cert-linux-$BIN_ARCH"
-        if curl -fsSL -o /usr/local/bin/copy-cert "$URL" 2>/dev/null; then
-            chmod +x /usr/local/bin/copy-cert; success "工具下载成功"
+        if curl -L -o /usr/local/bin/copy-cert "$URL" && chmod +x /usr/local/bin/copy-cert; then
+            success "工具下载成功"
         else
             warn "工具下载失败，降级为自签名证书"; cert_choice="2"
         fi
