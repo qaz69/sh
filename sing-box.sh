@@ -177,12 +177,21 @@ configure_tls() {
             if /usr/local/bin/copy-cert "$target_domain:443" > /tmp/copy_cert.log 2>&1; then
                 local sub_dir=$(ls -dt certs/* 2>/dev/null | head -n 1)
                 if [[ -n "$sub_dir" ]]; then
-                    # 优先按域名关键字匹配（与 tuic.sh 逻辑一致）
-                    local keyword=$(echo "$target_domain" | cut -d'.' -f2)
+                    # 优先按域名关键字匹配（与 tuic.sh 逻辑完全一致）
+                    # 取域名第二段作为关键字：www.bing.com→bing，bing.com→bing（兼容两段域名）
+                    local seg2=$(echo "$target_domain" | cut -d'.' -f2)
+                    local seg1=$(echo "$target_domain" | cut -d'.' -f1)
+                    # 若只有两段（seg2==TLD如com/net），用第一段作关键字
+                    local keyword
+                    if [[ "$seg2" =~ ^(com|net|org|io|cn|co|gov|edu)$ ]]; then
+                        keyword=$seg1
+                    else
+                        keyword=$seg2
+                    fi
                     local tmp_crt=$(ls "$sub_dir"/*"$keyword"*.crt 2>/dev/null | head -n 1)
                     local tmp_key=$(ls "$sub_dir"/*"$keyword"*.key 2>/dev/null | head -n 1)
-                    # 关键字匹配失败则按文件大小降序取最大文件
-                    [[ -z "$tmp_crt" ]] && tmp_crt=$(ls -S "$sub_dir"/*.crt "$sub_dir"/*.pem 2>/dev/null | head -n 1)
+                    # 关键字匹配失败则按文件大小降序取最大 .crt（与 tuic.sh 一致，不混入 .pem）
+                    [[ -z "$tmp_crt" ]] && tmp_crt=$(ls -S "$sub_dir"/*.crt 2>/dev/null | head -n 1)
                     [[ -z "$tmp_key" ]] && tmp_key=$(ls -S "$sub_dir"/*.key 2>/dev/null | head -n 1)
                     if [[ -n "$tmp_crt" && -n "$tmp_key" ]]; then
                         cp -f "$tmp_crt" "$CERT_PATH"
