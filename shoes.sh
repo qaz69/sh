@@ -23,12 +23,12 @@ SHOES_LINK_FILE="${SHOES_CONF_DIR}/config.txt"
 SYSTEMD_FILE="/etc/systemd/system/shoes.service"
 TMP_DIR="/tmp/shoesdl"
 
-# 颜色代码 (用于终端输出)
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-CYAN='\033[0;36m'
-RESET='\033[0m'
+# 颜色代码 (Ubuntu neofetch 风格: 红色警告/错误, 亮黄色标签/提示, 白色内容)
+RED='\e[0;31m'
+GREEN='\e[0;37m'
+YELLOW='\e[1;33m'
+CYAN='\e[1;33m'
+RESET='\e[0m'
 
 # ================== 核心检查 ==================
 require_root() {
