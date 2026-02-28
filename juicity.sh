@@ -11,29 +11,36 @@ set -e
 
 #=========================
 # 颜色和样式定义
+# 配色风格: bash-style 256色方案
+#   BLUE   111  蓝色   → 标题、边框、标签
+#   ORANGE 214  橙色   → 分隔线、序号、数值
+#   YELLOW 180  暖黄   → 提示文字、路径、SNI
+#   GREEN   78  绿色   → 成功、运行中、链接
+#   RED    203  红色   → 错误、警告、卸载
+#   DIM          暗色   → 次要说明文字
 #=========================
-# echo -e 用
-readonly RED=$'\e[38;5;203m'
-readonly GREEN=$'\e[38;5;78m'
-readonly YELLOW=$'\e[38;5;180m'
 readonly BLUE=$'\e[38;5;111m'
-readonly PURPLE=$'\e[38;5;111m'
-readonly CYAN=$'\e[38;5;214m'
 readonly ORANGE=$'\e[38;5;214m'
+readonly YELLOW=$'\e[38;5;180m'
+readonly GREEN=$'\e[38;5;78m'
+readonly RED=$'\e[38;5;203m'
 readonly BOLD=$'\033[1m'
 readonly DIM=$'\033[2m'
 readonly NC=$'\e[0m'
 
 # read -rp 提示符专用（readline 边界标记，防退格乱码）
-readonly P_RED=$'\001\e[38;5;203m\002'
-readonly P_GREEN=$'\001\e[38;5;78m\002'
-readonly P_YELLOW=$'\001\e[38;5;180m\002'
 readonly P_BLUE=$'\001\e[38;5;111m\002'
-readonly P_CYAN=$'\001\e[38;5;214m\002'
+readonly P_ORANGE=$'\001\e[38;5;214m\002'
+readonly P_YELLOW=$'\001\e[38;5;180m\002'
+readonly P_GREEN=$'\001\e[38;5;78m\002'
+readonly P_RED=$'\001\e[38;5;203m\002'
 readonly P_BOLD=$'\001\033[1m\002'
 readonly P_DIM=$'\001\033[2m\002'
 readonly P_NC=$'\001\e[0m\002'
 
+#=========================
+# 路径定义
+#=========================
 readonly CERT_DIR="/etc/juicity"
 readonly CONFIG_PATH="/etc/juicity/server.json"
 readonly CLIENT_PATH="/root/juicity/client.json"
@@ -47,20 +54,20 @@ readonly SHORTCUT="/usr/local/bin/juicity"
 # 日志函数
 #=========================
 info() {
-    echo -e "${GREEN}[✓]${NC} $1"
+    echo -e "${BLUE}[✓]${NC} ${YELLOW}$1${NC}"
 }
 
 warning() {
-    echo -e "${YELLOW}[!]${NC} $1"
+    echo -e "${ORANGE}[!]${NC} ${YELLOW}$1${NC}"
 }
 
 error() {
-    echo -e "${RED}[✗]${NC} $1"
+    echo -e "${RED}[✗]${NC} ${RED}$1${NC}"
     exit 1
 }
 
 success() {
-    echo -e "${GREEN}[SUCCESS]${NC} $1"
+    echo -e "${GREEN}[✓]${NC} ${GREEN}$1${NC}"
 }
 
 #=========================
@@ -158,14 +165,14 @@ generate_cert() {
     cd "$CERT_DIR" || error "无法进入证书目录"
 
     echo ""
-    echo -e "${CYAN}────────────────────────────────────────────────────${NC}"
-    echo -e "${BOLD}  证书配置${NC}"
-    echo -e "${CYAN}────────────────────────────────────────────────────${NC}"
-    echo -e "${DIM}提示：输入真实域名可复制其证书以提高伪装效果${NC}"
-    echo -e "${DIM}      留空则默认使用 www.bing.com 生成自签名证书${NC}"
+    echo -e "${BLUE}────────────────────────────────────────────────────${NC}"
+    echo -e "${BOLD}${ORANGE}  证书配置${NC}"
+    echo -e "${BLUE}────────────────────────────────────────────────────${NC}"
+    echo -e "${DIM}  提示：输入真实域名可复制其证书以提高伪装效果${NC}"
+    echo -e "${DIM}        留空则默认使用 www.bing.com 生成自签名证书${NC}"
     echo ""
 
-    read -rp "${P_BOLD}请输入域名 [默认: www.bing.com]: ${P_NC}" target_domain
+    read -rp "${P_ORANGE}  请输入域名 ${P_DIM}[默认: www.bing.com]${P_ORANGE}: ${P_NC}" target_domain
     target_domain=${target_domain:-www.bing.com}
 
     local bin_arch
@@ -301,8 +308,8 @@ update_juicity() {
     local current_version
     current_version="$(/usr/local/bin/juicity-server -v 2>/dev/null | grep -oP 'v\d+\.\d+\.\d+' | head -n 1 || echo "unknown")"
 
-    echo -e "${DIM}当前版本:${NC} ${YELLOW}$current_version${NC}"
-    echo -e "${DIM}最新版本:${NC} ${GREEN}$latest_version${NC}"
+    echo -e "  ${BLUE}当前版本:${NC} ${YELLOW}$current_version${NC}"
+    echo -e "  ${BLUE}最新版本:${NC} ${GREEN}$latest_version${NC}"
 
     if [[ "$latest_version" == "$current_version" ]]; then
         success "已经是最新版本，无需更新"
@@ -347,13 +354,13 @@ install_juicity() {
 
     # 配置端口
     echo ""
-    echo -e "${CYAN}────────────────────────────────────────────────────${NC}"
-    echo -e "${BOLD}  端口配置${NC}"
-    echo -e "${CYAN}────────────────────────────────────────────────────${NC}"
-    read -rp "${P_BOLD}请输入端口 [1-65535]（回车随机分配）: ${P_NC}" PORT
+    echo -e "${BLUE}────────────────────────────────────────────────────${NC}"
+    echo -e "${BOLD}${ORANGE}  端口配置${NC}"
+    echo -e "${BLUE}────────────────────────────────────────────────────${NC}"
+    read -rp "${P_ORANGE}  请输入端口 ${P_DIM}[1-65535，回车随机分配]${P_ORANGE}: ${P_NC}" PORT
     if [[ -z "$PORT" ]]; then
         PORT=$(get_safe_port)
-        info "随机分配端口: $PORT"
+        info "随机分配端口: ${ORANGE}$PORT${NC}"
     else
         if ! [[ "$PORT" =~ ^[0-9]+$ ]] || (( PORT < 1 || PORT > 65535 )); then
             error "端口格式不正确"
@@ -362,24 +369,24 @@ install_juicity() {
 
     # 配置 UUID
     echo ""
-    echo -e "${CYAN}────────────────────────────────────────────────────${NC}"
-    echo -e "${BOLD}  UUID 配置${NC}"
-    echo -e "${CYAN}────────────────────────────────────────────────────${NC}"
-    read -rp "${P_BOLD}请输入 UUID（回车随机生成）: ${P_NC}" uuid
+    echo -e "${BLUE}────────────────────────────────────────────────────${NC}"
+    echo -e "${BOLD}${ORANGE}  UUID 配置${NC}"
+    echo -e "${BLUE}────────────────────────────────────────────────────${NC}"
+    read -rp "${P_ORANGE}  请输入 UUID ${P_DIM}[回车随机生成]${P_ORANGE}: ${P_NC}" uuid
     if [[ -z "$uuid" ]]; then
         uuid=$(cat /proc/sys/kernel/random/uuid)
-        info "随机生成 UUID: $uuid"
+        info "随机生成 UUID: ${ORANGE}$uuid${NC}"
     fi
 
     # 配置密码
     echo ""
-    echo -e "${CYAN}────────────────────────────────────────────────────${NC}"
-    echo -e "${BOLD}  密码配置${NC}"
-    echo -e "${CYAN}────────────────────────────────────────────────────${NC}"
-    read -rp "${P_BOLD}请输入密码（回车随机生成）: ${P_NC}" password
+    echo -e "${BLUE}────────────────────────────────────────────────────${NC}"
+    echo -e "${BOLD}${ORANGE}  密码配置${NC}"
+    echo -e "${BLUE}────────────────────────────────────────────────────${NC}"
+    read -rp "${P_ORANGE}  请输入密码 ${P_DIM}[回车随机生成]${P_ORANGE}: ${P_NC}" password
     if [[ -z "$password" ]]; then
         password=$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 16)
-        info "随机生成密码: $password"
+        info "随机生成密码: ${ORANGE}$password${NC}"
     fi
 
     # 写入服务端配置
@@ -495,31 +502,29 @@ view_link() {
 
     clear
     echo ""
-    echo -e "${PURPLE}┌────────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${PURPLE}│${NC}             ${BOLD}Juicity 节点配置信息${NC} $EMOJI                  ${PURPLE}│${NC}"
-    echo -e "${PURPLE}├────────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${PURPLE}│${NC}  ${BOLD}端口:${NC}        ${CYAN}$port${NC}"
-    echo -e "${PURPLE}│${NC}  ${BOLD}UUID:${NC}        ${CYAN}$uuid${NC}"
-    echo -e "${PURPLE}│${NC}  ${BOLD}密码:${NC}        ${CYAN}$password${NC}"
-    echo -e "${PURPLE}│${NC}  ${BOLD}SNI:${NC}         ${YELLOW}$DOMAIN${NC}"
-    echo -e "${PURPLE}│${NC}  ${BOLD}拥塞控制:${NC}    ${GREEN}BBR${NC}"
-    echo -e "${PURPLE}│${NC}  ${BOLD}Insecure:${NC}    ${RED}True (必须开启)${NC}"
-    echo -e "${PURPLE}│${NC}  ${BOLD}安装日期:${NC}    ${DIM}$INSTALL_DATE${NC}"
-    echo -e "${PURPLE}└────────────────────────────────────────────────────────────┘${NC}"
+    echo -e "${BLUE}┌────────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${BLUE}│${NC}        ${BOLD}${ORANGE}Juicity 节点配置信息${NC}  $EMOJI                      ${BLUE}│${NC}"
+    echo -e "${BLUE}├────────────────────────────────────────────────────────────┤${NC}"
+    echo -e "${BLUE}│${NC}  ${DIM}端口        ${NC}${ORANGE}$port${NC}"
+    echo -e "${BLUE}│${NC}  ${DIM}UUID        ${NC}${YELLOW}$uuid${NC}"
+    echo -e "${BLUE}│${NC}  ${DIM}密码        ${NC}${YELLOW}$password${NC}"
+    echo -e "${BLUE}│${NC}  ${DIM}SNI         ${NC}${YELLOW}$DOMAIN${NC}"
+    echo -e "${BLUE}│${NC}  ${DIM}拥塞控制    ${NC}${GREEN}BBR${NC}"
+    echo -e "${BLUE}│${NC}  ${DIM}Insecure    ${NC}${RED}True (必须开启)${NC}"
+    echo -e "${BLUE}│${NC}  ${DIM}安装日期    ${NC}${DIM}$INSTALL_DATE${NC}"
+    echo -e "${BLUE}└────────────────────────────────────────────────────────────┘${NC}"
     echo ""
-    echo -e "${BOLD}客户端连接链接:${NC}"
-    echo -e "${CYAN}──────────────────────────────────────────────────────────────${NC}"
-
-    local share_link="${URL_PATH}"
+    echo -e "${BOLD}${ORANGE}客户端连接链接${NC}"
+    echo -e "${BLUE}──────────────────────────────────────────────────────────────${NC}"
 
     # IPv4
     if [[ -n "$IPV4" ]]; then
         local link_v4="juicity://$uuid:$password@$IPV4:$port?sni=$DOMAIN&allow_insecure=1&congestion_control=bbr#$EMOJI-Juicity-v4"
         echo ""
-        echo -e "${BLUE}${BOLD}[IPv4]${NC} ${YELLOW}$IPV4${NC}"
-        echo -e "${GREEN}$link_v4${NC}"
+        echo -e "  ${BLUE}${BOLD}[IPv4]${NC}  ${YELLOW}$IPV4${NC}"
+        echo -e "  ${GREEN}$link_v4${NC}"
     else
-        echo -e "${DIM}[未检测到 IPv4 地址]${NC}"
+        echo -e "  ${DIM}[未检测到 IPv4 地址]${NC}"
     fi
 
     # IPv6
@@ -528,24 +533,23 @@ view_link() {
         for ip6 in $IPV6_LIST; do
             local link_v6="juicity://$uuid:$password@[$ip6]:$port?sni=$DOMAIN&allow_insecure=1&congestion_control=bbr#$EMOJI-Juicity-v6-$i"
             echo ""
-            echo -e "${BLUE}${BOLD}[IPv6-$i]${NC} ${YELLOW}$ip6${NC}"
-            echo -e "${GREEN}$link_v6${NC}"
+            echo -e "  ${BLUE}${BOLD}[IPv6-$i]${NC}  ${YELLOW}$ip6${NC}"
+            echo -e "  ${GREEN}$link_v6${NC}"
             ((i++))
         done
     else
         echo ""
-        echo -e "${DIM}[未检测到 IPv6 地址]${NC}"
+        echo -e "  ${DIM}[未检测到 IPv6 地址]${NC}"
     fi
 
     echo ""
-    echo -e "${CYAN}──────────────────────────────────────────────────────────────${NC}"
+    echo -e "${BLUE}──────────────────────────────────────────────────────────────${NC}"
     echo ""
-    echo -e "${BOLD}客户端配置文件路径:${NC} ${YELLOW}$CLIENT_PATH${NC}"
-    echo -e "${BOLD}分享链接保存路径:${NC}   ${YELLOW}$URL_PATH${NC}"
+    echo -e "  ${DIM}客户端配置文件路径${NC}  ${YELLOW}$CLIENT_PATH${NC}"
+    echo -e "  ${DIM}分享链接保存路径  ${NC}  ${YELLOW}$URL_PATH${NC}"
     echo ""
-
-    yellow_txt() { echo -e "${YELLOW}$1${NC}"; }
-    yellow_txt "客户端 JSON 配置内容如下："
+    echo -e "${ORANGE}客户端 JSON 配置内容如下：${NC}"
+    echo -e "${BLUE}──────────────────────────────────────────────────────────────${NC}"
     cat "$CLIENT_PATH"
     echo ""
 }
@@ -556,13 +560,13 @@ view_link() {
 uninstall_juicity() {
     clear
     echo -e "${RED}┌──────────────────────────────────────────┐${NC}"
-    echo -e "${RED}│${NC}         ${BOLD}卸载 Juicity 服务${NC}               ${RED}│${NC}"
+    echo -e "${RED}│${NC}    ${BOLD}${RED}卸载 Juicity 服务${NC}                   ${RED}│${NC}"
     echo -e "${RED}└──────────────────────────────────────────┘${NC}"
     echo ""
     warning "此操作将完全删除 Juicity 及其所有配置文件"
     echo ""
 
-    read -rp "${P_RED}确定要卸载吗？[y/N]: ${P_NC}" confirm
+    read -rp "${P_RED}  确定要卸载吗？[y/N]: ${P_NC}" confirm
     if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
         info "已取消卸载"
         return
@@ -580,7 +584,7 @@ uninstall_juicity() {
     systemctl daemon-reload 2>/dev/null
 
     success "Juicity 已完全卸载！"
-    read -rp "按 Enter 键退出..." && exit 0
+    read -rp "  按 Enter 键退出..." && exit 0
 }
 
 #=========================
@@ -588,26 +592,26 @@ uninstall_juicity() {
 #=========================
 view_status() {
     clear
-    echo -e "${CYAN}┌──────────────────────────────────────────┐${NC}"
-    echo -e "${CYAN}│${NC}         ${BOLD}Juicity 服务状态${NC}               ${CYAN}│${NC}"
-    echo -e "${CYAN}└──────────────────────────────────────────┘${NC}"
+    echo -e "${BLUE}┌──────────────────────────────────────────┐${NC}"
+    echo -e "${BLUE}│${NC}    ${BOLD}${ORANGE}Juicity 服务状态${NC}                   ${BLUE}│${NC}"
+    echo -e "${BLUE}└──────────────────────────────────────────┘${NC}"
     echo ""
 
     if systemctl is-active --quiet juicity-server; then
-        echo -e "${GREEN}[✓] 服务状态: 运行中${NC}"
+        echo -e "  ${GREEN}[✓]${NC} ${GREEN}服务状态: 运行中${NC}"
     else
-        echo -e "${RED}[✗] 服务状态: 已停止${NC}"
+        echo -e "  ${RED}[✗]${NC} ${RED}服务状态: 已停止${NC}"
     fi
 
     if systemctl is-enabled --quiet juicity-server 2>/dev/null; then
-        echo -e "${GREEN}[✓] 开机启动: 已启用${NC}"
+        echo -e "  ${GREEN}[✓]${NC} ${GREEN}开机启动: 已启用${NC}"
     else
-        echo -e "${YELLOW}[!] 开机启动: 未启用${NC}"
+        echo -e "  ${ORANGE}[!]${NC} ${YELLOW}开机启动: 未启用${NC}"
     fi
 
     echo ""
-    echo -e "${BOLD}详细状态:${NC}"
-    echo -e "${CYAN}──────────────────────────────────────────${NC}"
+    echo -e "  ${BOLD}${ORANGE}详细状态:${NC}"
+    echo -e "${BLUE}──────────────────────────────────────────${NC}"
     systemctl status juicity-server --no-pager -l
     echo ""
 }
@@ -619,29 +623,29 @@ main_menu() {
     setup_shortcut
     clear
 
-    echo -e "${CYAN}┌────────────────────────────────────────────────────────┐${NC}"
-    echo -e "${CYAN}│${NC}               ${BOLD}${PURPLE}Juicity 管理脚本${NC}                      ${CYAN}│${NC}"
-    echo -e "${CYAN}├────────────────────────────────────────────────────────┤${NC}"
-    echo -e "${CYAN}│${NC}  ${DIM}功能: 快捷指令 | 随机端口 | 双栈IP | 证书复制${NC}     ${CYAN}│${NC}"
-    echo -e "${CYAN}│${NC}  ${DIM}系统: Ubuntu / Debian / CentOS${NC}                     ${CYAN}│${NC}"
-    echo -e "${CYAN}└────────────────────────────────────────────────────────┘${NC}"
+    echo -e "${BLUE}┌────────────────────────────────────────────────────────┐${NC}"
+    echo -e "${BLUE}│${NC}            ${BOLD}${ORANGE}Juicity 管理脚本${NC}                          ${BLUE}│${NC}"
+    echo -e "${BLUE}├────────────────────────────────────────────────────────┤${NC}"
+    echo -e "${BLUE}│${NC}  ${DIM}功能: 快捷指令 | 随机端口 | 双栈IP | 证书复制${NC}     ${BLUE}│${NC}"
+    echo -e "${BLUE}│${NC}  ${DIM}系统: Ubuntu / Debian / CentOS${NC}                     ${BLUE}│${NC}"
+    echo -e "${BLUE}└────────────────────────────────────────────────────────┘${NC}"
     echo ""
-    echo -e "  ${GREEN}1.${NC} ${YELLOW}安装/重装 Juicity${NC}"
-    echo -e "  ${GREEN}2.${NC} ${YELLOW}更新到最新版本${NC}"
-    echo -e "  ${BLUE}3.${NC} ${GREEN}启动服务${NC}"
-    echo -e "  ${BLUE}4.${NC} ${RED}停止服务${NC}"
-    echo -e "  ${BLUE}5.${NC} ${CYAN}重启服务${NC}"
-    echo -e "  ${YELLOW}6.${NC} ${BLUE}查看服务状态${NC}"
-    echo -e "  ${YELLOW}7.${NC} ${BLUE}查看实时日志${NC}"
-    echo -e "  ${YELLOW}8.${NC} ${BLUE}查看连接信息${NC}"
-    echo -e "  ${RED}9.${NC} ${DIM}卸载 Juicity${NC}"
-    echo -e "  ${DIM}0.${NC} ${DIM}退出脚本${NC}"
+    echo -e "  ${ORANGE}1.${NC}  ${YELLOW}安装/重装 Juicity${NC}"
+    echo -e "  ${ORANGE}2.${NC}  ${YELLOW}更新到最新版本${NC}"
+    echo -e "  ${ORANGE}3.${NC}  ${GREEN}启动服务${NC}"
+    echo -e "  ${ORANGE}4.${NC}  ${RED}停止服务${NC}"
+    echo -e "  ${ORANGE}5.${NC}  ${YELLOW}重启服务${NC}"
+    echo -e "  ${ORANGE}6.${NC}  ${BLUE}查看服务状态${NC}"
+    echo -e "  ${ORANGE}7.${NC}  ${BLUE}查看实时日志${NC}"
+    echo -e "  ${ORANGE}8.${NC}  ${BLUE}查看连接信息${NC}"
+    echo -e "  ${ORANGE}9.${NC}  ${RED}卸载 Juicity${NC}"
+    echo -e "  ${DIM}0.${NC}  ${DIM}退出脚本${NC}"
     echo ""
-    echo -e "${CYAN}────────────────────────────────────────────────────────${NC}"
-    echo -e "${DIM}安装后可使用快捷命令 ${NC}${BOLD}juicity${NC}${DIM} 管理服务${NC}"
+    echo -e "${BLUE}────────────────────────────────────────────────────────${NC}"
+    echo -e "  ${DIM}安装后可使用快捷命令 ${NC}${BOLD}${ORANGE}juicity${NC}${DIM} 管理服务${NC}"
     echo ""
 
-    read -rp "${P_BOLD}请选择操作 [0-9]: ${P_NC}" choice
+    read -rp "${P_ORANGE}  请选择操作 [0-9]: ${P_NC}" choice
 
     case $choice in
         1) install_juicity ;;
@@ -661,7 +665,7 @@ main_menu() {
         9) uninstall_juicity ;;
         0)
             echo ""
-            info "感谢使用，再见！"
+            success "感谢使用，再见！"
             echo ""
             exit 0
             ;;
@@ -683,6 +687,6 @@ check_root
 while true; do
     main_menu
     echo ""
-    read -n 1 -s -r -p "${P_DIM}按任意键返回主菜单...${P_NC}"
+    read -n 1 -s -r -p "${P_DIM}  按任意键返回主菜单...${P_NC}"
     echo ""
 done
