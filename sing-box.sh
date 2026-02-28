@@ -159,9 +159,9 @@ configure_tls() {
     echo ""
 
     if [ "$cert_choice" == "1" ]; then
-        echo -ne "${BLUE}请输入要复制的域名 [默认: bing.com]${NC}: "
+        echo -ne "${BLUE}请输入要伪造的域名 [默认: www.bing.com]${NC}: "
         read -r target_domain
-        target_domain=${target_domain:-bing.com}
+        target_domain=${target_domain:-www.bing.com}
         get_arch
         info "下载证书复制工具..."
         URL="https://github.com/virusdefender/copy-cert/releases/latest/download/copy-cert-linux-$BIN_ARCH"
@@ -172,15 +172,25 @@ configure_tls() {
         fi
 
         if [ "$cert_choice" == "1" ]; then
-            info "正在从 ${YELLOW}$target_domain${NC} 抓取证书..."
+            info "正在从 ${YELLOW}$target_domain${NC} 复制证书..."
             rm -rf certs/
             if /usr/local/bin/copy-cert "$target_domain:443" > /tmp/copy_cert.log 2>&1; then
                 local sub_dir=$(ls -dt certs/* 2>/dev/null | head -n 1)
                 if [[ -n "$sub_dir" ]]; then
-                    local tmp_crt=$(ls "$sub_dir"/*.{crt,pem} 2>/dev/null | head -n 1)
-                    local tmp_key=$(ls "$sub_dir"/*.key 2>/dev/null | head -n 1)
+                    # 优先按域名关键字匹配（与 tuic.sh 逻辑一致）
+                    local keyword=$(echo "$target_domain" | cut -d'.' -f2)
+                    local tmp_crt=$(ls "$sub_dir"/*"$keyword"*.crt 2>/dev/null | head -n 1)
+                    local tmp_key=$(ls "$sub_dir"/*"$keyword"*.key 2>/dev/null | head -n 1)
+                    # 关键字匹配失败则按文件大小降序取最大文件
+                    [[ -z "$tmp_crt" ]] && tmp_crt=$(ls -S "$sub_dir"/*.crt "$sub_dir"/*.pem 2>/dev/null | head -n 1)
+                    [[ -z "$tmp_key" ]] && tmp_key=$(ls -S "$sub_dir"/*.key 2>/dev/null | head -n 1)
                     if [[ -n "$tmp_crt" && -n "$tmp_key" ]]; then
-                        cp -f "$tmp_crt" "$CERT_PATH"; cp -f "$tmp_key" "$KEY_PATH"; rm -rf certs/; FINAL_DOMAIN=$target_domain; success "证书复制成功: ${GREEN}$target_domain${NC}"; return 0
+                        cp -f "$tmp_crt" "$CERT_PATH"
+                        cp -f "$tmp_key" "$KEY_PATH"
+                        rm -rf certs/
+                        FINAL_DOMAIN=$target_domain
+                        success "✅ 证书复制成功: ${GREEN}$target_domain${NC}"
+                        return 0
                     fi
                 fi
             fi
@@ -189,9 +199,12 @@ configure_tls() {
     fi
 
     if [ "$cert_choice" == "2" ]; then
-        FINAL_DOMAIN="bing.com"
-        info "生成自签名证书..."
-        openssl req -x509 -nodes -newkey rsa:2048 -keyout "$KEY_PATH" -out "$CERT_PATH" -days 3650 -subj "/CN=$FINAL_DOMAIN" >/dev/null 2>&1
+        echo -ne "${BLUE}请输入自签名证书域名 [默认: www.bing.com]${NC}: "
+        read -r self_domain
+        FINAL_DOMAIN=${self_domain:-www.bing.com}
+        info "生成自签名证书 (EC P-256)..."
+        openssl ecparam -genkey -name prime256v1 -out "$KEY_PATH" 2>/dev/null
+        openssl req -new -x509 -days 36500 -key "$KEY_PATH" -out "$CERT_PATH" -subj "/CN=$FINAL_DOMAIN" >/dev/null 2>&1
         success "自签名证书已生成 (域名: ${YELLOW}$FINAL_DOMAIN${NC})"
     fi
 }
