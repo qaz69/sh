@@ -122,7 +122,23 @@ get_all_ips() {
         IPV4=$(ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v "127.0.0.1" | head -n 1)
     fi
 
-    IPV6_LIST=$(ip -6 addr show scope global | grep inet6 | awk '{print $2}' | cut -d/ -f1)
+    # 只保留公网 IPv6（排除 ULA fc/fd、链路本地 fe80、回环 ::1、临时隐私地址）
+    IPV6_LIST=""
+    while IFS= read -r ip6; do
+        [[ -z "$ip6" ]] && continue
+        # 排除 ULA（fc::/7 即 fc00::/7，fc 或 fd 开头）
+        [[ "$ip6" =~ ^[fF][cCdD] ]] && continue
+        # 排除链路本地 fe80::/10
+        [[ "$ip6" =~ ^[fF][eE][89aAbBcCdDeEfF] ]] && continue
+        # 排除回环
+        [[ "$ip6" == "::1" ]] && continue
+        # 排除临时隐私地址（flags 包含 temporary）
+        local addr_flags
+        addr_flags=$(ip -6 addr show | grep -B1 "inet6 ${ip6}/" | grep -oP 'temporary|deprecated' 2>/dev/null || true)
+        [[ -n "$addr_flags" ]] && continue
+        IPV6_LIST="${IPV6_LIST}${ip6}"$'\n'
+    done < <(ip -6 addr show scope global | grep -v "temporary" | grep inet6 | awk '{print $2}' | cut -d/ -f1)
+    IPV6_LIST=$(printf "%s" "$IPV6_LIST" | sed '/^$/d')
 }
 
 #=========================
