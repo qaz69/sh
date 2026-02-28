@@ -12,15 +12,15 @@ set -e
 #=========================
 # 颜色和样式定义
 #=========================
-readonly RED='\033[38;5;203m'
-readonly GREEN='\033[38;5;114m'
-readonly YELLOW='\033[38;5;221m'
-readonly BLUE='\033[38;5;117m'
-readonly PURPLE='\033[38;5;183m'
-readonly CYAN='\033[38;5;87m'
+readonly RED='\e[0;31m'
+readonly GREEN='\e[0;37m'
+readonly YELLOW='\e[1;33m'
+readonly BLUE='\e[1;33m'
+readonly PURPLE='\e[0;31m'
+readonly CYAN='\e[1;33m'
 readonly BOLD='\033[1m'
 readonly DIM='\033[2m'
-readonly NC='\033[0m'
+readonly NC='\e[0m'
 
 #=========================
 # 路径定义
