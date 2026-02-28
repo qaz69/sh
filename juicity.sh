@@ -12,12 +12,12 @@ set -e
 #=========================
 # 颜色和样式定义
 #=========================
-readonly RED='\e[0;31m'
-readonly GREEN='\e[0;37m'
-readonly YELLOW='\e[1;33m'
-readonly BLUE='\e[1;33m'
-readonly PURPLE='\e[0;31m'
-readonly CYAN='\e[1;33m'
+readonly RED='\e[38;5;203m'
+readonly GREEN='\e[38;5;78m'
+readonly YELLOW='\e[38;5;180m'
+readonly BLUE='\e[38;5;111m'
+readonly PURPLE='\e[38;5;111m'
+readonly CYAN='\e[38;5;214m'
 readonly BOLD='\033[1m'
 readonly DIM='\033[2m'
 readonly NC='\e[0m'
