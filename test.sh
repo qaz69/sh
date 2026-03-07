@@ -140,60 +140,68 @@ configure_firewall() {
 
 # =========================================================
 #  自动偷邻居网站 (用于 Reality SNI)
-#  搜索范围: 单IP + C段 (/24) 全部254个IP并发查询
+#  方式: 扫C段443端口 → 从SSL证书SAN字段直接读域名
+#  完全不依赖DNS反查数据库，域名保证真实有效
 # =========================================================
 find_neighbor_domains() {
     local my_ip="$1"
     local c_segment
     c_segment=$(echo "$my_ip" | cut -d'.' -f1-3)
-    local all_results=""
     local tmp_dir
     tmp_dir=$(mktemp -d)
 
-    # --- 来源1: rapiddns.io 查单IP ---
-    info "查询单IP反解域名 ($my_ip)..." >&2
-    curl -s --max-time 10 \
-        "https://rapiddns.io/sameip/$my_ip?full=1" 2>/dev/null | \
-        grep -oP '(?<=<td>)[a-zA-Z0-9][a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,}(?=</td>)' | \
-        grep -v "^$my_ip$" > "$tmp_dir/r1.txt" 2>/dev/null
+    info "并发扫描C段 ${c_segment}.0/24 的443端口..." >&2
 
-    # --- 来源2: hackertarget + rapiddns 并发扫C段全部IP ---
-    info "并发扫描C段 ${c_segment}.0/24 ..." >&2
+    # 第一步: 并发扫描C段所有IP的443端口
     for i in $(seq 1 254); do
         local scan_ip="${c_segment}.$i"
         (
-            # hackertarget
-            curl -s --max-time 4 \
-                "https://api.hackertarget.com/reverseiplookup/?q=$scan_ip" 2>/dev/null | \
-                grep -v "^error\|^API\|^No \|^$" > "$tmp_dir/ht_$i.txt" 2>/dev/null
-            # rapiddns
-            curl -s --max-time 5 \
-                "https://rapiddns.io/sameip/$scan_ip?full=1" 2>/dev/null | \
-                grep -oP '(?<=<td>)[a-zA-Z0-9][a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,}(?=</td>)' | \
-                grep -v "^$scan_ip$" > "$tmp_dir/rd_$i.txt" 2>/dev/null
+            if (echo >/dev/tcp/$scan_ip/443) 2>/dev/null; then
+                echo "$scan_ip" > "$tmp_dir/open_$i.txt"
+            fi
         ) &
-        # 每30个并发等一下，避免限速
-        if (( i % 30 == 0 )); then
+        if (( i % 50 == 0 )); then
             wait
-            echo -ne "  已扫描: ${i}/254 个IP\r" >&2
+            echo -ne "  端口扫描进度: ${i}/254\r" >&2
         fi
     done
     wait
-    echo -e "  已扫描: 254/254 个IP - 完成" >&2
+    echo -e "  端口扫描完成，正在读取SSL证书域名..." >&2
 
-    # 合并所有结果，去重过滤
-    local all_domains
-    all_domains=$(cat "$tmp_dir"/*.txt 2>/dev/null | \
-        grep -v "^$" | \
-        grep -v "^[0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+$" | \
-        grep '\.' | \
-        sort -u | head -100)
-    rm -rf "$tmp_dir"
+    # 第二步: 对开放443的IP，读取SSL证书SAN字段提取域名
+    local open_ips
+    open_ips=$(cat "$tmp_dir"/open_*.txt 2>/dev/null)
+    rm -f "$tmp_dir"/open_*.txt
 
-    if [[ -z "$all_domains" ]]; then
+    if [[ -z "$open_ips" ]]; then
+        rm -rf "$tmp_dir"
         echo ""
         return
     fi
+
+    local ip_count
+    ip_count=$(echo "$open_ips" | wc -l)
+    info "找到 $ip_count 个开放443的IP，读取SSL证书..." >&2
+
+    while IFS= read -r open_ip; do
+        (
+            echo | timeout 4 openssl s_client \
+                -connect "$open_ip:443" 2>/dev/null | \
+                openssl x509 -noout -text 2>/dev/null | \
+                grep -oP '(?<=DNS:)[^\s,]+' | \
+                grep -v '^\.\*\.' \
+                > "$tmp_dir/cert_${open_ip//./_}.txt" 2>/dev/null
+        ) &
+    done <<< "$open_ips"
+    wait
+
+    # 合并所有证书域名，去重
+    local all_domains
+    all_domains=$(cat "$tmp_dir"/cert_*.txt 2>/dev/null | \
+        grep -v "^$" | \
+        grep '\.' | \
+        sort -u | head -100)
+    rm -rf "$tmp_dir"
 
     echo "$all_domains"
 }
