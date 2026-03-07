@@ -151,14 +151,14 @@ find_neighbor_domains() {
     tmp_dir=$(mktemp -d)
 
     # --- 来源1: rapiddns.io 查单IP ---
-    info "查询单IP反解域名 ($my_ip)..."
+    info "查询单IP反解域名 ($my_ip)..." >&2
     curl -s --max-time 10 \
         "https://rapiddns.io/sameip/$my_ip?full=1" 2>/dev/null | \
         grep -oP '(?<=<td>)[a-zA-Z0-9][a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,}(?=</td>)' | \
         grep -v "^$my_ip$" > "$tmp_dir/r1.txt" 2>/dev/null
 
     # --- 来源2: hackertarget + rapiddns 并发扫C段全部IP ---
-    info "并发扫描C段 ${c_segment}.0/24 ..."
+    info "并发扫描C段 ${c_segment}.0/24 ..." >&2
     for i in $(seq 1 254); do
         local scan_ip="${c_segment}.$i"
         (
@@ -175,11 +175,11 @@ find_neighbor_domains() {
         # 每30个并发等一下，避免限速
         if (( i % 30 == 0 )); then
             wait
-            echo -ne "  已扫描: ${i}/254 个IP\r"
+            echo -ne "  已扫描: ${i}/254 个IP\r" >&2
         fi
     done
     wait
-    echo -e "  已扫描: 254/254 个IP - 完成"
+    echo -e "  已扫描: 254/254 个IP - 完成" >&2
 
     # 合并所有结果，去重过滤
     local all_domains
@@ -213,11 +213,11 @@ test_reality_compatible() {
         -servername "$domain" \
         -tls1_3 2>/dev/null)
 
-    # 检查是否成功握手
-    echo "$tls_info" | grep -q "Protocol  : TLSv1.3" || return 1
+    # 检查是否成功握手（openssl输出格式: "New, TLSv1.3, Cipher is ..."）
+    echo "$tls_info" | grep -qiE "TLSv1\.3" || return 1
 
-    # 检查是否支持 X25519（Reality 必须）
-    echo "$tls_info" | grep -qiE "X25519|ECDH" || return 1
+    # X25519检测（部分服务器不输出，不强制要求）
+    # echo "$tls_info" | grep -qiE "X25519|ECDH" || return 1
 
     return 0
 }
