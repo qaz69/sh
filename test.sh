@@ -201,10 +201,25 @@ test_reality_compatible() {
 
 auto_find_reality_sni() {
     detect_network
-    local my_ip="$IP4"
 
-    if [[ -z "$my_ip" ]]; then
-        warn "无法获取本机公网IP，请手动输入SNI域名"
+    # 内网IP判断函数
+    is_private_ip() {
+        local ip="$1"
+        [[ "$ip" =~ ^10\. ]] && return 0
+        [[ "$ip" =~ ^172\.(1[6-9]|2[0-9]|3[01])\. ]] && return 0
+        [[ "$ip" =~ ^192\.168\. ]] && return 0
+        return 1
+    }
+
+    # 强制通过外部接口获取真实公网IP（避免拿到内网地址）
+    local my_ip
+    my_ip=$(curl -s4 --max-time 5 https://api.ipify.org 2>/dev/null || \
+            curl -s4 --max-time 5 https://ip.sb 2>/dev/null || \
+            curl -s4 --max-time 5 https://ifconfig.me 2>/dev/null || echo "")
+
+    # 如果还是内网地址或为空，提示手动输入
+    if [[ -z "$my_ip" ]] || is_private_ip "$my_ip"; then
+        warn "无法获取公网IP（检测到: ${my_ip:-无}），请手动输入SNI域名"
         echo -ne "${BLUE}请输入 Reality SNI 域名 [默认: www.microsoft.com]${NC}: "
         read -r manual_sni
         REALITY_SNI=${manual_sni:-www.microsoft.com}
@@ -212,7 +227,7 @@ auto_find_reality_sni() {
     fi
 
     echo ""
-    info "本机IP: ${YELLOW}$my_ip${NC}"
+    info "公网IP: ${YELLOW}$my_ip${NC}"
     info "正在搜索邻居网站..."
     echo ""
 
