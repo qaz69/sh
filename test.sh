@@ -211,8 +211,10 @@ test_reality_compatible() {
     local domain="$1"
     local timeout=5
 
-    # 检查域名格式
-    [[ "$domain" =~ ^[a-zA-Z0-9][a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,}$ ]] || return 1
+    # 检查域名格式（允许连字符和多级域名）
+    [[ "$domain" =~ ^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?\.[a-zA-Z]{2,}$ ]] || return 1
+    # 跳过通配符域名
+    [[ "$domain" == \*.* ]] && return 1
 
     # 测试TLS连接，获取协议版本
     local tls_info
