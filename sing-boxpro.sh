@@ -8,37 +8,6 @@
 export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 
-# --- 检查 whiptail ---
-if ! command -v whiptail &> /dev/null; then
-    echo "未检测到 whiptail，正在安装..."
-    if command -v apt-get &> /dev/null; then
-        apt-get update && apt-get install -y whiptail
-    elif command -v yum &> /dev/null; then
-        yum install -y newt
-    fi
-fi
-
-# --- TUI 颜色配置 ---
-export NEWT_COLORS='
-root=,blue
-window=black,lightgray
-border=black,lightgray
-shadow=black,gray
-button=black,white
-actbutton=white,red
-compactbutton=black,lightgray
-title=black,lightgray
-textbox=black,lightgray
-acttextbox=black,cyan
-entry=black,lightgray
-disentry=gray,lightgray
-checkbox=black,lightgray
-actcheckbox=black,cyan
-listbox=black,lightgray
-actlistbox=black,cyan
-sellistbox=white,blue
-actsellistbox=white,blue
-'
 
 # --- 颜色定义 ---
 RED='\e[0;31m'
@@ -233,6 +202,48 @@ test_reality_compatible() {
 }
 
 auto_find_reality_sni() {
+    # 先问用户选择大厂还是邻居
+    echo ""
+    print_double_line
+    echo -e "${BOLD}         Reality SNI 来源选择${NC}"
+    print_double_line
+    echo -e "  ${CYAN}1${NC}. 借用大厂域名  ${DIM}(快速，如 www.microsoft.com)${NC}"
+    echo -e "  ${CYAN}2${NC}. 借用邻居域名  ${DIM}(更真实，需扫描C段，约需1-2分钟)${NC}"
+    echo -e "  ${CYAN}3${NC}. 手动输入域名"
+    print_line
+    echo -ne "${BLUE}请选择 [1-3, 默认: 1]${NC}: "
+    read -r sni_source
+    sni_source=${sni_source:-1}
+
+    case $sni_source in
+        1)
+            # 大厂列表，测试选第一个可用的
+            for domain in "www.microsoft.com" "addons.mozilla.org" "www.cloudflare.com" "www.apple.com"; do
+                echo -ne "  测试 ${CYAN}$domain${NC} ... "
+                if test_reality_compatible "$domain"; then
+                    echo -e "${GREEN}✓ 可用${NC}"
+                    REALITY_SNI="$domain"
+                    success "已选择大厂域名: ${GREEN}$REALITY_SNI${NC}"
+                    return
+                else
+                    echo -e "${DIM}✗${NC}"
+                fi
+            done
+            warn "大厂域名均不可用，请手动输入"
+            echo -ne "${BLUE}请输入 Reality SNI 域名${NC}: "
+            read -r manual_sni
+            REALITY_SNI=${manual_sni:-www.microsoft.com}
+            return
+            ;;
+        3)
+            echo -ne "${BLUE}请输入 Reality SNI 域名${NC}: "
+            read -r manual_sni
+            REALITY_SNI=${manual_sni:-www.microsoft.com}
+            return
+            ;;
+    esac
+    # 选2: 继续下面的邻居搜索流程
+
     detect_network
 
     # 内网IP判断函数
@@ -437,6 +448,72 @@ configure_tls() {
     fi
 }
 
+
+# =========================================================
+#  SS2022 协议配置
+# =========================================================
+configure_ss2022() {
+    print_double_line
+    echo -e "${BOLD}         Shadowsocks 2022 协议配置${NC}"
+    print_double_line
+    echo -e "  ${DIM}SS2022 密码必须是固定字节数的 base64 编码字符串${NC}"
+    echo ""
+    echo -e "  加密方式:"
+    echo -e "  ${CYAN}1${NC}. 2022-blake3-aes-128-gcm       ${DIM}(需16字节密码)${NC}"
+    echo -e "  ${CYAN}2${NC}. 2022-blake3-aes-256-gcm       ${DIM}(需32字节密码)${NC}"
+    echo -e "  ${CYAN}3${NC}. 2022-blake3-chacha20-poly1305  ${DIM}(需32字节密码)${NC}"
+    echo -e "  ${CYAN}4${NC}. 随机选择"
+    print_line
+    echo -ne "${BLUE}请选择加密方式 [1-4, 默认: 4]${NC}: "
+    read -r method_choice
+    method_choice=${method_choice:-4}
+
+    local key_bytes=32
+    case $method_choice in
+        1) SS_METHOD="2022-blake3-aes-128-gcm";       key_bytes=16 ;;
+        2) SS_METHOD="2022-blake3-aes-256-gcm";       key_bytes=32 ;;
+        3) SS_METHOD="2022-blake3-chacha20-poly1305";  key_bytes=32 ;;
+        4)
+            local methods=("2022-blake3-aes-128-gcm" "2022-blake3-aes-256-gcm" "2022-blake3-chacha20-poly1305")
+            local idx=$((RANDOM % 3))
+            SS_METHOD="${methods[$idx]}"
+            [[ "$SS_METHOD" == "2022-blake3-aes-128-gcm" ]] && key_bytes=16 || key_bytes=32
+            info "随机选择加密方式: ${YELLOW}$SS_METHOD${NC}"
+            ;;
+        *) SS_METHOD="2022-blake3-aes-256-gcm"; key_bytes=32 ;;
+    esac
+
+    echo ""
+    echo -e "  ${DIM}密码要求: ${key_bytes} 字节的 base64 编码字符串${NC}"
+    echo -e "  ${DIM}示例: $(openssl rand -base64 $key_bytes | tr -d '\n')${NC}"
+    echo ""
+    echo -e "  ${CYAN}1${NC}. 随机生成 ${DIM}(推荐)${NC}"
+    echo -e "  ${CYAN}2${NC}. 手动输入"
+    print_line
+    echo -ne "${BLUE}请选择密码方式 [1-2, 默认: 1]${NC}: "
+    read -r pass_choice
+    pass_choice=${pass_choice:-1}
+
+    if [[ "$pass_choice" == "2" ]]; then
+        echo -ne "${BLUE}请输入密码 (${key_bytes}字节的base64字符串)${NC}: "
+        read -r input_pass
+        local decoded_len
+        decoded_len=$(echo "$input_pass" | base64 -d 2>/dev/null | wc -c)
+        if [[ "$decoded_len" -ne "$key_bytes" ]]; then
+            warn "密码不符合要求 (解码后 ${decoded_len} 字节，需要 ${key_bytes} 字节)，自动生成随机密码"
+            SS_PASS=$(openssl rand -base64 $key_bytes | tr -d '\n')
+        else
+            SS_PASS="$input_pass"
+        fi
+    else
+        SS_PASS=$(openssl rand -base64 $key_bytes | tr -d '\n')
+    fi
+
+    success "SS2022 配置完成"
+    echo -e "  加密方式: ${YELLOW}$SS_METHOD${NC}"
+    echo -e "  密码:     ${YELLOW}$SS_PASS${NC}"
+}
+
 # =========================================================
 #  安装主程序
 # =========================================================
@@ -483,12 +560,17 @@ install_singbox() {
     echo ""
     generate_reality_keys
 
+    # 配置 SS2022
+    echo ""
+    configure_ss2022
+
     # 生成端口和认证信息
     echo ""
     info "生成配置参数..."
     TUIC_PORT=$((RANDOM % 50000 + 10000))
     ANY_PORT=$((RANDOM % 50000 + 10000))
     REALITY_PORT=$((RANDOM % 50000 + 10000))
+    SS_PORT=$((RANDOM % 50000 + 10000))
     UUID=$(cat /proc/sys/kernel/random/uuid)
     PASS=$(openssl rand -base64 16 | tr -d '/+=' | head -c 16)
     SHORT_ID=$(openssl rand -hex 4)
@@ -496,8 +578,9 @@ install_singbox() {
     configure_firewall $TUIC_PORT udp
     configure_firewall $ANY_PORT tcp
     configure_firewall $REALITY_PORT tcp
+    configure_firewall $SS_PORT tcp
 
-    # 写入配置文件 (三协议)
+    # 写入配置文件 (四协议)
     info "生成服务配置..."
     cat > "$CONF_FILE" <<EOF
 {
@@ -554,6 +637,14 @@ install_singbox() {
           "short_id": ["$SHORT_ID"]
         }
       }
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "ss-in",
+      "listen": "::",
+      "listen_port": $SS_PORT,
+      "method": "$SS_METHOD",
+      "password": "$SS_PASS"
     }
   ],
   "outbounds": [ { "type": "direct", "tag": "direct" } ]
@@ -592,6 +683,9 @@ REALITY_SHORT_ID=$SHORT_ID
 TUIC_PORT=$TUIC_PORT
 ANY_PORT=$ANY_PORT
 REALITY_PORT=$REALITY_PORT
+SS_PORT=$SS_PORT
+SS_METHOD=$SS_METHOD
+SS_PASS=$SS_PASS
 UUID=$UUID
 PASSWORD=$PASS
 INSTALL_TIME=$(date '+%Y-%m-%d %H:%M:%S')
@@ -617,9 +711,18 @@ show_links() {
     source "$INFO_PATH" 2>/dev/null
     detect_network
 
+    # 获取真实公网IP（NAT机器内网IP不可用）
+    local PUBLIC_IP4
+    PUBLIC_IP4=$(curl -s4 --max-time 5 https://api.ipify.org 2>/dev/null ||                  curl -s4 --max-time 5 https://ip.sb 2>/dev/null || echo "")
+    # 公网IPv6直接用detect_network的结果（IPv6通常是公网地址）
+    local PUBLIC_IP6="$IP6"
+
     local tuic_p=$(jq -r '.inbounds[] | select(.type=="tuic") | .listen_port' "$CONF_FILE")
     local any_p=$(jq -r '.inbounds[] | select(.type=="anytls") | .listen_port' "$CONF_FILE")
     local reality_p=$(jq -r '.inbounds[] | select(.type=="vless") | .listen_port' "$CONF_FILE")
+    local ss_p=$(jq -r '.inbounds[] | select(.type=="shadowsocks") | .listen_port' "$CONF_FILE")
+    local ss_method=$(jq -r '.inbounds[] | select(.type=="shadowsocks") | .method' "$CONF_FILE")
+    local ss_pass=$(jq -r '.inbounds[] | select(.type=="shadowsocks") | .password' "$CONF_FILE")
     local uuid=$(jq -r '.inbounds[] | select(.type=="tuic") | .users[0].uuid' "$CONF_FILE")
     local pass=$(jq -r '.inbounds[] | select(.type=="tuic") | .users[0].password' "$CONF_FILE")
     local pub_key="$REALITY_PUBLIC_KEY"
@@ -647,15 +750,20 @@ show_links() {
 
         echo -e "\n${BOLD}[Reality/VLESS]${NC}"
         echo -e "${CYAN}vless://$uuid@${bracket_l}${ip}${bracket_r}:$reality_p?encryption=none&flow=xtls-rprx-vision&security=reality&sni=$rsni&fp=chrome&pbk=$pub_key&sid=$short_id&type=tcp&headerType=none#Reality-$label${NC}"
+
+        echo -e "\n${BOLD}[Shadowsocks 2022]${NC}"
+        local ss_userinfo
+        ss_userinfo=$(echo -n "$ss_method:$ss_pass" | base64 -w 0)
+        echo -e "${CYAN}ss://${ss_userinfo}@${bracket_l}${ip}${bracket_r}:$ss_p#SS2022-$label${NC}"
     }
 
     local has_output=false
-    if $HAS_IPV4 && [[ -n "$IP4" ]]; then
-        print_node_links "IPv4" "$IP4"
+    if [[ -n "$PUBLIC_IP4" ]]; then
+        print_node_links "IPv4" "$PUBLIC_IP4"
         has_output=true
     fi
-    if $HAS_IPV6 && [[ -n "$IP6" ]]; then
-        print_node_links "IPv6" "$IP6"
+    if [[ -n "$PUBLIC_IP6" ]]; then
+        print_node_links "IPv6" "$PUBLIC_IP6"
         has_output=true
     fi
 
@@ -684,9 +792,11 @@ show_status() {
         local tuic_p=$(jq -r '.inbounds[] | select(.type=="tuic") | .listen_port' "$CONF_FILE" 2>/dev/null)
         local any_p=$(jq -r '.inbounds[] | select(.type=="anytls") | .listen_port' "$CONF_FILE" 2>/dev/null)
         local reality_p=$(jq -r '.inbounds[] | select(.type=="vless") | .listen_port' "$CONF_FILE" 2>/dev/null)
+        local ss_p2=$(jq -r '.inbounds[] | select(.type=="shadowsocks") | .listen_port' "$CONF_FILE" 2>/dev/null)
         echo -e "  TUIC 端口  : ${BLUE}$tuic_p${NC} $(ss -ulnp | grep -q ":$tuic_p " && echo "${CYAN}[监听]${NC}" || echo "${RED}[未监听]${NC}")"
         echo -e "  AnyTLS端口 : ${BLUE}$any_p${NC} $(ss -tlnp | grep -q ":$any_p " && echo "${CYAN}[监听]${NC}" || echo "${RED}[未监听]${NC}")"
         echo -e "  Reality端口: ${BLUE}$reality_p${NC} $(ss -tlnp | grep -q ":$reality_p " && echo "${CYAN}[监听]${NC}" || echo "${RED}[未监听]${NC}")"
+        echo -e "  SS2022端口 : ${BLUE}$ss_p2${NC} $(ss -tlnp | grep -q ":$ss_p2 " && echo "${CYAN}[监听]${NC}" || echo "${RED}[未监听]${NC}")"
     fi
     detect_network
     if $HAS_IPV4; then echo -e "  公网IPv4   : ${CYAN}$IP4${NC}"; else echo -e "  公网IPv4   : ${DIM}无${NC}"; fi
@@ -785,68 +895,78 @@ uninstall() {
 }
 
 # =========================================================
-#  Whiptail 主菜单
+#  主菜单
 # =========================================================
 main_menu() {
+    clear
+    # 服务状态
+    local status_text status_color
     if systemctl is-active --quiet sing-box 2>/dev/null; then
-        STATUS_TEXT="运行中 (Running)"
+        status_text="● 运行中"; status_color="$GREEN"
     elif [[ -f "$SERVICE_FILE" ]]; then
-        STATUS_TEXT="已停止 (Stopped)"
+        status_text="● 已停止"; status_color="$RED"
     else
-        STATUS_TEXT="未安装 (Not Installed)"
+        status_text="● 未安装"; status_color="$YELLOW"
     fi
 
-    CHOICE=$(whiptail --title "Sing-box 管理脚本 v4.0" \
-    --backtitle "Sing-Box | TUIC + AnyTLS + Reality | 状态: $STATUS_TEXT" \
-    --menu "请使用上下键或数字键选择操作:" \
-    20 65 11 \
-    "1"  "安装/重装服务 (Install)" \
-    "2"  "启动服务 (Start)" \
-    "3"  "停止服务 (Stop)" \
-    "4"  "重启服务 (Restart)" \
-    "5"  "服务状态 (Status)" \
-    "6"  "查看日志 (View Logs)" \
-    "7"  "节点信息 (Node Links)" \
-    "8"  "配置文件 (Config)" \
-    "9"  "系统诊断 (Diagnose)" \
-    "10" "卸载服务 (Uninstall)" \
-    "0"  "退出脚本 (Exit)" \
-    3>&1 1>&2 2>&3)
-
-    exitstatus=$?
-    [[ $exitstatus != 0 ]] && exit 0
+    echo -e "${BLUE}"
+    cat << "EOF"
+╔════════════════════════════════════════════════════════════════════╗
+║                      Sing-Box 管理脚本 v4.0                         ║
+║              TUIC + AnyTLS + Reality 三协议版                        ║
+╚════════════════════════════════════════════════════════════════════╝
+EOF
+    echo -e "${NC}  服务状态: ${status_color}${status_text}${NC}"
+    echo ""
+    print_line
+    echo -e "  ${CYAN}1${NC}.  安装 / 重装服务"
+    echo -e "  ${CYAN}2${NC}.  启动服务"
+    echo -e "  ${CYAN}3${NC}.  停止服务"
+    echo -e "  ${CYAN}4${NC}.  重启服务"
+    echo -e "  ${CYAN}5${NC}.  服务状态"
+    echo -e "  ${CYAN}6${NC}.  查看日志"
+    echo -e "  ${CYAN}7${NC}.  节点信息"
+    echo -e "  ${CYAN}8${NC}.  配置文件"
+    echo -e "  ${CYAN}9${NC}.  系统诊断"
+    echo -e "  ${CYAN}10${NC}. 卸载服务"
+    echo -e "  ${DIM}0${NC}.  退出"
+    print_line
+    echo -ne "  请选择 [0-10]: "
+    read -r CHOICE
 
     case $CHOICE in
-        1)  clear; install_singbox; read -n 1 -s -r -p "按任意键返回..." ;;
+        1)  clear; install_singbox ;;
         2)
             clear; info "正在启动服务..."
             systemctl start sing-box; sleep 2
             if systemctl is-active --quiet sing-box; then success "服务启动成功"
             else warn "服务启动失败，请查看日志"; fi
-            read -n 1 -s -r -p "按任意键返回..."
             ;;
         3)
             clear; info "正在停止服务..."
             systemctl stop sing-box; sleep 1
             if ! systemctl is-active --quiet sing-box; then success "服务已停止"
             else warn "服务停止失败"; fi
-            read -n 1 -s -r -p "按任意键返回..."
             ;;
         4)
             clear; info "正在重启服务..."
             systemctl restart sing-box; sleep 2
             if systemctl is-active --quiet sing-box; then success "服务重启成功"
             else warn "服务重启失败，请查看日志"; fi
-            read -n 1 -s -r -p "按任意键返回..."
             ;;
-        5)  clear; show_status;  read -n 1 -s -r -p "按任意键返回..." ;;
-        6)  clear; show_logs ;;
-        7)  clear; show_links;   read -n 1 -s -r -p "按任意键返回..." ;;
-        8)  clear; show_config;  read -n 1 -s -r -p "按任意键返回..." ;;
-        9)  clear; diagnose;     read -n 1 -s -r -p "按任意键返回..." ;;
-        10) clear; uninstall;    read -n 1 -s -r -p "按任意键返回..." ;;
+        5)  clear; show_status ;;
+        6)  clear; show_logs; return ;;
+        7)  clear; show_links ;;
+        8)  clear; show_config ;;
+        9)  clear; diagnose ;;
+        10) clear; uninstall ;;
         0)  clear; exit 0 ;;
+        *)  warn "无效选择，请输入 0-10" ;;
     esac
+
+    echo ""
+    echo -ne "${DIM}按任意键返回菜单...${NC}"
+    read -n 1 -s -r
 }
 
 # --- 主循环 ---
