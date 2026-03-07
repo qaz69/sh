@@ -130,8 +130,8 @@ detect_network() {
     echo -e "\n${BOLD}网络环境检测结果:${NC}"
     print_line
     echo -e "  主网卡: ${BLUE}$MAIN_IFACE${NC}"
-    echo -e "  IPv4 : ${HAS_IPV4} && echo -e "${CYAN}$IP4 ✓${NC}" || echo -e "${DIM}未配置${NC}"
-    echo -e "  IPv6 : ${HAS_IPV6} && echo -e "${CYAN}$IP6 ✓${NC}" || echo -e "${DIM}未配置${NC}"
+    if $HAS_IPV4; then echo -e "  IPv4 : ${CYAN}$IP4 ✓${NC}"; else echo -e "  IPv4 : ${DIM}未配置${NC}"; fi
+    if $HAS_IPV6; then echo -e "  IPv6 : ${CYAN}$IP6 ✓${NC}"; else echo -e "  IPv6 : ${DIM}未配置${NC}"; fi
     print_line
 }
 
@@ -164,8 +164,15 @@ configure_tls() {
         target_domain=${target_domain:-bing.com}
         get_arch
         info "下载证书复制工具..."
-        URL="https://github.com/virusdefender/copy-cert/releases/latest/download/copy-cert-linux-$BIN_ARCH"
-        if curl -fsSL -o /usr/local/bin/copy-cert "$URL" 2>/dev/null; then
+
+        # 修复: 去掉 -f 参数，改用 -L --max-time 30，与 Juicity 脚本保持一致
+        # 原因: -f 在 GitHub 多次重定向过程中会误判失败导致下载中断
+        # arm64 架构没有对应二进制，回退到 amd64
+        local dl_arch="$BIN_ARCH"
+        [[ "$dl_arch" == "arm64" ]] && dl_arch="amd64"
+        URL="https://github.com/virusdefender/copy-cert/releases/latest/download/copy-cert-linux-$dl_arch"
+
+        if curl -L --max-time 30 -o /usr/local/bin/copy-cert "$URL" 2>/dev/null; then
             chmod +x /usr/local/bin/copy-cert; success "工具下载成功"
         else
             warn "工具下载失败，降级为自签名证书"; cert_choice="2"
@@ -337,8 +344,8 @@ show_status() {
         echo -e "  ANY 端口 : ${BLUE}$any_p${NC} $(ss -ulnp | grep -q ":$any_p " && echo "${CYAN}[监听]${NC}" || echo "${RED}[未监听]${NC}")"
     fi
     detect_network
-    echo -e "  公网IPv4 : ${HAS_IPV4} && echo "${CYAN}$IP4${NC}" || echo "${DIM}无${NC}"
-    echo -e "  公网IPv6 : ${HAS_IPV6} && echo "${CYAN}$IP6${NC}" || echo "${DIM}无${NC}"
+    if $HAS_IPV4; then echo -e "  公网IPv4 : ${CYAN}$IP4${NC}"; else echo -e "  公网IPv4 : ${DIM}无${NC}"; fi
+    if $HAS_IPV6; then echo -e "  公网IPv6 : ${CYAN}$IP6${NC}"; else echo -e "  公网IPv6 : ${DIM}无${NC}"; fi
     if [[ -f "$INFO_PATH" ]]; then source "$INFO_PATH"; echo -e "  安装时间 : ${YELLOW}${INSTALL_TIME:-未知}${NC}"; fi
     print_double_line; echo ""; systemctl status sing-box --no-pager -l
 }
