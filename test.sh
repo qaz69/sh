@@ -140,32 +140,55 @@ configure_firewall() {
 
 # =========================================================
 #  自动偷邻居网站 (用于 Reality SNI)
+#  搜索范围: 单IP + C段 (/24) 全部254个IP并发查询
 # =========================================================
 find_neighbor_domains() {
     local my_ip="$1"
-    local found_domains=()
-
-    info "正在查询 IP 段邻居网站..."
-
-    # 从 rapiddns.io 查询同IP的域名
-    local rapiddns_result
-    rapiddns_result=$(curl -s --max-time 10 \
-        "https://rapiddns.io/sameip/$my_ip?full=1" 2>/dev/null | \
-        grep -oP '(?<=<td>)[a-zA-Z0-9][a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,}(?=</td>)' | \
-        grep -v "^$my_ip$" | grep '\.' | head -30)
-
-    # 从 hackertarget 查询同C段
     local c_segment
     c_segment=$(echo "$my_ip" | cut -d'.' -f1-3)
-    local hackertarget_result
-    hackertarget_result=$(curl -s --max-time 10 \
-        "https://api.hackertarget.com/reverseiplookup/?q=$my_ip" 2>/dev/null | \
-        grep -v "^error\|^API" | head -20)
+    local all_results=""
+    local tmp_dir
+    tmp_dir=$(mktemp -d)
 
-    # 合并去重
+    # --- 来源1: rapiddns.io 查单IP ---
+    info "查询单IP反解域名 ($my_ip)..."
+    curl -s --max-time 10 \
+        "https://rapiddns.io/sameip/$my_ip?full=1" 2>/dev/null | \
+        grep -oP '(?<=<td>)[a-zA-Z0-9][a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,}(?=</td>)' | \
+        grep -v "^$my_ip$" > "$tmp_dir/r1.txt" 2>/dev/null
+
+    # --- 来源2: hackertarget + rapiddns 并发扫C段全部IP ---
+    info "并发扫描C段 ${c_segment}.0/24 ..."
+    for i in $(seq 1 254); do
+        local scan_ip="${c_segment}.$i"
+        (
+            # hackertarget
+            curl -s --max-time 4 \
+                "https://api.hackertarget.com/reverseiplookup/?q=$scan_ip" 2>/dev/null | \
+                grep -v "^error\|^API\|^No \|^$" > "$tmp_dir/ht_$i.txt" 2>/dev/null
+            # rapiddns
+            curl -s --max-time 5 \
+                "https://rapiddns.io/sameip/$scan_ip?full=1" 2>/dev/null | \
+                grep -oP '(?<=<td>)[a-zA-Z0-9][a-zA-Z0-9\-\.]+\.[a-zA-Z]{2,}(?=</td>)' | \
+                grep -v "^$scan_ip$" > "$tmp_dir/rd_$i.txt" 2>/dev/null
+        ) &
+        # 每30个并发等一下，避免限速
+        if (( i % 30 == 0 )); then
+            wait
+            echo -ne "  已扫描: ${i}/254 个IP\r"
+        fi
+    done
+    wait
+    echo -e "  已扫描: 254/254 个IP - 完成"
+
+    # 合并所有结果，去重过滤
     local all_domains
-    all_domains=$(echo -e "$rapiddns_result\n$hackertarget_result" | \
-        grep -v "^$" | sort -u | head -30)
+    all_domains=$(cat "$tmp_dir"/*.txt 2>/dev/null | \
+        grep -v "^$" | \
+        grep -v "^[0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+$" | \
+        grep '\.' | \
+        sort -u | head -100)
+    rm -rf "$tmp_dir"
 
     if [[ -z "$all_domains" ]]; then
         echo ""
